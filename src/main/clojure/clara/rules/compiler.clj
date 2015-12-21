@@ -755,36 +755,89 @@
                  updated-bindings
                  still-unsatisfied))))))
 
+(defn- extract-negations
+  "Extracts new rules to complex negations. Returns a map of :new-lhs containing
+   the new left-hand side of a production, and :generated-rules, containing
+   a sequence of rules generated to handle the complex negation."
+  [production]
+  (loop [previous-expressions []
+         [next-expression & remaining-expressions](:lhs production)
+         generated-rules []]
+
+    (if next-expression
+
+      ;; Find complex nested negations to refactor into new rules.
+      (if (and (= :not (first next-expression))
+               (vector? (second next-expression))
+               (#{:and :or :not} (first (second next-expression))))
+
+        ;; Dealing with a compound negation, so extract it out.
+        (let [negation-expr (second next-expression)
+              gen-rule-name (str (or (:name production)
+                                     (gensym "gen-rule"))
+                                 "__"
+                                 (inc (count generated-rules)))
+
+              modified-expression `[:not {:type ~(if (compiling-cljs?)
+                                                  'clara.rules.engine/NegationResult
+                                                  'clara.rules.engine.NegationResult)
+                                          :constraints [(~'= ~gen-rule-name ~'gen-rule-name)]}]
+              generated-rule {:name gen-rule-name
+                              :lhs (conj previous-expressions
+                                         negation-expr)
+                              :rhs `(clara.rules/insert! (eng/->NegationResult ~gen-rule-name))}]
+
+          (recur (conj previous-expressions modified-expression)
+                 remaining-expressions
+                 (conj generated-rules generated-rule)))
+
+        ;; next-expression wasn't a compound negation, so move on.
+        (recur (conj previous-expressions next-expression)
+               remaining-expressions
+               generated-rules))
+
+      {:new-lhs previous-expressions
+       :generated-rules generated-rules})))
+
 (defn- get-conds
   "Returns a sequence of [condition environment] tuples and their corresponding productions."
   [production]
 
-  (let [lhs-expression (into [:and] (:lhs production)) ; Add implied and.
+  (let [{:keys [new-lhs generated-rules]} (extract-negations production)
+
+        ;; Add implied and
+        lhs-expression (into [:and] new-lhs)
         expression  (to-dnf lhs-expression)
         disjunctions (if (= :or (first expression))
                        (rest expression)
                        [expression])]
 
-    ;; Now we've split the production into one ore more disjunctions that
-    ;; can be processed independently. Commonality between disjunctions will
-    ;; be merged when building the Rete network.
-    (for [disjunction disjunctions
+    (into
 
-          :let [conditions (if (and (vector? disjunction)
-                                    (= :and (first disjunction)))
-                             (rest disjunction)
-                             [disjunction])
+     ;; If any new rules were generated for complex negations,
+     ;; process and include them in the result.
+     (mapcat get-conds generated-rules)
 
-                ;; Convert exists operators to accumulator and a test.
-                conditions (extract-exists conditions)
+     ;; Now we've split the production into one ore more disjunctions that
+     ;; can be processed independently. Commonality between disjunctions will
+     ;; be merged when building the Rete network.
+     (for [disjunction disjunctions
 
-                sorted-conditions (sort-conditions conditions)
+           :let [conditions (if (and (vector? disjunction)
+                                     (= :and (first disjunction)))
+                              (rest disjunction)
+                              [disjunction])
 
-                ;; Attach the conditions environment. TODO: narrow environment to those used?
-                conditions-with-env (for [condition sorted-conditions]
-                                      [condition (:env production)])]]
+                 ;; Convert exists operators to accumulator and a test.
+                 conditions (extract-exists conditions)
 
-      [conditions-with-env production])))
+                 sorted-conditions (sort-conditions conditions)
+
+                 ;; Attach the conditions environment. TODO: narrow environment to those used?
+                 conditions-with-env (for [condition sorted-conditions]
+                                       [condition (:env production)])]]
+
+       [conditions-with-env production]))))
 
 
 (sc/defn to-beta-tree :- [schema/BetaNode]
@@ -880,7 +933,7 @@
         ;; :id that has had its expressions compiled into different
         ;; compiled functions.
         compile-expr (memoize (fn [id expr] (eval expr)))
-        
+
         compile-beta-tree
         (fn compile-beta-tree [beta-nodes parent-bindings is-root]
           (vec

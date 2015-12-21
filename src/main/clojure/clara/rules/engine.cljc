@@ -27,6 +27,10 @@
 ;; Token with no bindings, used as the root of beta nodes.
 (def empty-token (->Token [] {}))
 
+;; Record indicating the negation existing in the working memory.
+(defrecord NegationResult [gen-rule-name])
+
+
 ;; Schema for the structure returned by the components
 ;; function on the session protocol.
 ;; This is simply a comment rather than first-class schema
