@@ -761,7 +761,7 @@
    a sequence of rules generated to handle the complex negation."
   [production]
   (loop [previous-expressions []
-         [next-expression & remaining-expressions](:lhs production)
+         [next-expression & remaining-expressions] (:lhs production)
          generated-rules []]
 
     (if next-expression
@@ -782,10 +782,13 @@
                                                   'clara.rules.engine/NegationResult
                                                   'clara.rules.engine.NegationResult)
                                           :constraints [(~'= ~gen-rule-name ~'gen-rule-name)]}]
-              generated-rule {:name gen-rule-name
-                              :lhs (conj previous-expressions
-                                         negation-expr)
-                              :rhs `(clara.rules/insert! (eng/->NegationResult ~gen-rule-name))}]
+              generated-rule (cond-> {:name gen-rule-name
+                                      :lhs (conj previous-expressions
+                                                 negation-expr)
+                                      :rhs `(clara.rules/insert! (eng/->NegationResult ~gen-rule-name))}
+
+                               ;; Propagate properties like salience to the generated production.
+                               (:props production) (assoc :props (:props production)))]
 
           (recur (conj previous-expressions modified-expression)
                  remaining-expressions
@@ -1123,9 +1126,22 @@
 
   ;; We preserve a map of fact types to alpha nodes for efficiency,
   ;; effectively memoizing this operation.
-  (let [alpha-map (atom {})]
+  (let [alpha-map (atom {})
+
+        ;; If a customized fact-type-fn is provided,
+        ;; we must use a specialized grouping function
+        ;; that handles internal control types that may not
+        ;; follow the provided type function.
+        fact-grouping-fn (if (= fact-type-fn type)
+                           type
+                           (fn [fact]
+                             (if (isa? (type fact) :clara.rules.engine/system-type)
+                               ;; Internal system types always use Clojure's type mechanism.
+                               (type fact)
+                               ;; All other types defer to the provided function.
+                               (fact-type-fn fact))))]
     (fn [facts]
-      (for [[fact-type facts] (platform/tuned-group-by fact-type-fn facts)]
+      (for [[fact-type facts] (platform/tuned-group-by fact-grouping-fn facts)]
 
         (if-let [alpha-nodes (get @alpha-map fact-type)]
 

@@ -997,6 +997,35 @@
                     (fire-rules)
                     (query negation-with-prior-bindings))))))
 
+
+(deftest test-complex-negation-custom-type
+  (let [cold-not-match-temp
+        (dsl/parse-query []
+                         [[:not [:and
+                                 [?t <- :temperature]
+                                 [:cold [{temperature :temperature}] (= temperature (:temperature ?t))]]]])
+
+        s (mk-session [cold-not-match-temp] :cache false :fact-type-fn :type)]
+
+    (is (= [{}]
+           (-> s
+               (fire-rules)
+               (query cold-not-match-temp))))
+
+    ;; Should not match when negation is met.
+    (is (empty? (-> s
+                    (insert {:type :temperature :temperature 10}
+                            {:type :cold :temperature 10})
+                    (fire-rules)
+                    (query cold-not-match-temp))))
+
+    ;; Should have result if only a single item matched.
+    (is (= [{}]
+           (-> s
+               (insert {:type :temperature :temperature 10})
+               (fire-rules)
+               (query cold-not-match-temp))))))
+
 (deftest test-negation-with-complex-retractions
   (let [;; Non-blocked rule, where "blocked" means there is a
         ;; negated condition "guard".
