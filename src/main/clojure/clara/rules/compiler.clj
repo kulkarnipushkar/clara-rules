@@ -350,14 +350,28 @@
     :condition
     (first expression)))
 
-(defn- cartesian-join [lists lst]
-  (if (seq lists)
-    (let [[h & t] lists]
-      (mapcat
-       (fn [l]
-         (map #(conj % l) (cartesian-join t lst)))
-       h))
-    [lst]))
+
+(defn- cartesian-join
+  "Performs a cartesian join to distribute disjunctions for disjunctive normal form.,
+  This distributing each disjunction across every other disjunction and also across each
+  given conjunction. Returns a sequence where each element contains a sequence
+  of conjunctions that can be used in rules."
+  [disjunctions-to-distribute conjunctions]
+
+  ;; For every disjuction, do a cartesian join to distribute it
+  ;; across every other disjuction. We also must distributed it across
+  ;; each conjunction
+  (reduce
+   (fn [distributed-disjunctions disjunction-to-distribute]
+
+     (for [expression disjunction-to-distribute
+           distributed-disjunction distributed-disjunctions]
+       (conj distributed-disjunction expression)))
+
+   ;; Start with our conjunctions to join to, since we must distribute
+   ;; all disjunctions across these as well.
+   [conjunctions]
+   disjunctions-to-distribute))
 
 (defn to-dnf
   "Convert a lhs expression to disjunctive normal form."
@@ -394,10 +408,10 @@
         :exists expression
 
         ;; DeMorgan's law converting conjunction to negated disjuctions.
-        :and (to-dnf (into [:or] (for [grandchild (rest child)] [:not grandchild])))
+        :and (to-dnf (cons :or (for [grandchild (rest child)] [:not grandchild])))
 
         ;; DeMorgan's law converting disjuction to negated conjuctions.
-        :or  (to-dnf (into [:and] (for [grandchild (rest child)] [:not grandchild])))))
+        :or  (to-dnf (cons :and (for [grandchild (rest child)] [:not grandchild])))))
 
     ;; For all others, recursively process the children.
     (let [children (map to-dnf (rest expression))
@@ -414,21 +428,21 @@
           (let [disjunctions (map rest (filter #(= :or (expr-type %)) children))
                 ;; Merge all child conjunctions into a single conjunction.
                 combine-conjunctions (fn [children]
-                                       (into [:and]
-                                             (apply concat
-                                                    (for [child children]
-                                                      (if (= :and (expr-type child))
-                                                        (rest child)
-                                                        [child])))))]
+                                       (cons :and
+                                             (for [child children
+                                                   nested-child (if (= :and (expr-type child))
+                                                                  (rest child)
+                                                                  [child])]
+                                               nested-child)))]
             (if (empty? disjunctions)
               (combine-conjunctions children)
-              (into [:or]
+              (cons :or
                     (for [c (cartesian-join disjunctions conjunctions)]
                       (combine-conjunctions c)))))
           :or
           ;; Merge all child disjunctions into a single disjunction.
           (let [disjunctions (mapcat rest (filter #(#{:or} (expr-type %)) children))]
-            (into [:or] (concat disjunctions conjunctions))))))))
+            (cons :or (concat disjunctions conjunctions))))))))
 
 (defn- non-equality-unification? [expression]
   "Returns true if the given expression does a non-equality unification against a variable,
@@ -513,7 +527,6 @@
                                    :when (and (= condition (:condition beta-node))
                                               (= node-type (:node-type beta-node))
 
-                                              ;; Environment for merged nodes should be equal or empty.
                                               (or (= env (:env beta-node))
                                                   (and (empty? env)
                                                        (empty? (:env beta-node))))
@@ -792,7 +805,7 @@
 
       ;; Find complex nested negations to refactor into new rules.
       (if (and (= :not (first next-expression))
-               (vector? (second next-expression))
+               (sequential? (second next-expression))
                (#{:and :or :not} (first (second next-expression))))
 
         ;; Dealing with a compound negation, so extract it out.
@@ -853,7 +866,7 @@
      ;; be merged when building the Rete network.
      (for [disjunction disjunctions
 
-           :let [conditions (if (and (vector? disjunction)
+           :let [conditions (if (and (sequential? disjunction)
                                      (= :and (first disjunction)))
                               (rest disjunction)
                               [disjunction])
@@ -888,7 +901,7 @@
         ;; Sort nodes so the same id is assigned consistently,
         ;; then map the to corresponding ids.
         nodes-to-id (zipmap
-                     (sort gen-compare nodes)
+                     nodes
                      (range))
 
         ;; Anonymous function to walk the nodes and
