@@ -4212,3 +4212,29 @@
     (is (= (frequencies [{:?m (->Type2)}])
            (frequencies (query retract1 q))
            (frequencies (query retract2 q))))))
+
+(deftest test-reused-var-in-constraints
+  (let [q (dsl/parse-query [] [[Temperature (= ?t (+ 5 temperature)) (< ?t 10)]])
+
+        ;; Test that a value must be bound before use.
+        invalid (dsl/parse-query [] [[Temperature (< ?t 10) (= ?t (+ 5 temperature))]] )
+
+        s (mk-session [q] :cache false)]
+
+    ;; Item that does not satisfy the second criterion should produce no results.
+    (is (empty?
+         (-> s
+             (insert (->Temperature 20 "MCI"))
+             (fire-rules)
+             (query q))))
+
+    ;; Item that does satisfy second criterion should match.
+    (is (= [{:?t 5}]
+         (-> s
+             (insert (->Temperature 0 "MCI"))
+             (fire-rules)
+             (query q))))
+
+    ;; The variable used out of order should be marked as unbound.
+    (assert-ex-data {:variables #{'?t}}
+                    (mk-session [invalid] :cache false))))
