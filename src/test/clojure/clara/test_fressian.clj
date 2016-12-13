@@ -16,16 +16,15 @@
   (with-open [os (java.io.ByteArrayOutputStream.)
               ^FressianWriter wtr (fres/create-writer os :handlers df/write-handler-lookup)]
     ;; Write
-    (binding [d/*node-id->node-cache* (volatile! {})
-              d/*clj-record-holder* (java.util.IdentityHashMap.)]
-      (fres/write-object wtr x))
-
+    (d/thread-local-binding [d/node-id->node-cache (volatile! {})
+                             d/clj-record-holder (java.util.IdentityHashMap.)]
+                            (fres/write-object wtr x))
     ;; Read
     (let [data (.toByteArray os)]
-      (binding [d/*clj-record-holder* (java.util.ArrayList.)]
-        (with-open [is (java.io.ByteArrayInputStream. data)
-                    ^FressianReader rdr (fres/create-reader is :handlers df/read-handler-lookup)]
-          (fres/read-object rdr))))))
+      (d/thread-local-binding [d/clj-record-holder (java.util.ArrayList.)]
+                              (with-open [is (java.io.ByteArrayInputStream. data)
+                                          ^FressianReader rdr (fres/create-reader is :handlers df/read-handler-lookup)]
+                                (fres/read-object rdr))))))
 
 (defn serde [x]
   ;; Tests all serialization cases in a way that SerDe's 2 times to show that the serialization to

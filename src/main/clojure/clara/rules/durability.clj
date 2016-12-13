@@ -27,22 +27,41 @@
 ;;;; Rulebase serialization helpers.
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(def ^:dynamic *node-id->node-cache*
+(defmacro thread-local-binding
+  "Wraps given body in a try block, where it sets a provided thread locals 
+   and removes it in finally block."
+  [bindings & body]
+  (when-not (vector? bindings)
+    (throw (ex-info (str "Binding needs to be a vector.")
+                    {:bindings bindings})))
+  (when-not (even? (count bindings))
+    (throw (ex-info (str "Needs an even number of forms in binding vector")
+                    {:bindings bindings})))
+  (let [bindings-map (apply assoc {} bindings)]
+    `(try
+       (doseq [~'[k v] ~bindings-map]
+         (.set ~'k ~'v))  
+       ~@body
+       (finally
+         (doseq [~'[k v] ~bindings-map]
+           (.remove ~'k))))))
+
+(def ^:internal ^ThreadLocal node-id->node-cache
   "Useful for caching rulebase network nodes by id during serialization and deserialization to
    avoid creating multiple object instances for the same node."
-  nil)
+  (ThreadLocal.))
 
-(def ^:dynamic *compile-expr-fn*
+(def ^:internal ^ThreadLocal compile-expr-fn
   "Similar to what is done in clara.rules.compiler, this is a function used to compile
    expressions used in nodes of the rulebase network.  A common function would cache
    evaluated expressions by node-id and expression form to avoid duplicate evalutation
    of the same expressions."
-  nil)
+  (ThreadLocal.))
 
 (defn- add-node-fn [node fn-key meta-key]
   (assoc node
          fn-key
-         (*compile-expr-fn* (:id node) (meta-key (meta node)))))
+         ((.get compile-expr-fn) (:id node) (meta-key (meta node)))))
 
 (defn add-rhs-fn [node]
   ;; The RHS expression may need to be compiled within the namespace scope of specifically declared
@@ -69,56 +88,56 @@
 
 (defn add-accumulator [node]
   (assoc node
-         :accumulator ((*compile-expr-fn* (:id node)
+         :accumulator (((.get compile-expr-fn) (:id node)
                                           (:accum-expr (meta node)))
                        (:env node))))
 
 (defn node-id->node
-  "Lookup the node for the given node-id in the *node-id->node-cache* cache."
+  "Lookup the node for the given node-id in the node-id->node-cache cache."
   [node-id]
-  (@*node-id->node-cache* node-id))
+  (@(.get node-id->node-cache) node-id))
 
 (defn cache-node
-  "Cache the node in the *node-id->node-cache*.  Returns the node."
+  "Cache the node in the node-id->node-cache.  Returns the node."
   [node]
   (when-let [node-id (:id node)]
-    (vswap! *node-id->node-cache* assoc node-id node))
+    (vswap! (.get node-id->node-cache) assoc node-id node))
   node)
 
-(def ^:dynamic *clj-record-holder*
+(def ^:internal ^ThreadLocal clj-record-holder
   "A cache for writing and reading Clojure records.  At write time, an IdentityHashMap can be
    used to keep track of repeated references to the same record object instance occurring in
    the serialization stream.  At read time, a plain ArrayList (mutable and indexed for speed)
    can be used to add records to when they are first seen, then look up repeated occurrences
    of references to the same record instance later."
-  nil)
+  (ThreadLocal.))
 
 (defn clj-record-fact->idx
-  "Gets the numeric index for the given fact from the *clj-record-holder*."
+  "Gets the numeric index for the given fact from the clj-record-holder."
   [fact]
-  (.get ^Map *clj-record-holder* fact))
+  (.get ^Map (.get clj-record-holder) fact))
 
 (defn clj-record-holder-add-fact-idx!
-  "Adds the fact to the *clj-record-holder* with a new index.  This can later be retrieved
+  "Adds the fact to the clj-record-holder with a new index.  This can later be retrieved
    with clj-record-fact->idx."
   [fact]
   ;; Note the values will be int type here.  This shouldn't be a problem since they
   ;; will be read later as longs and both will be compatible with the index lookup
   ;; at read-time.  This could have a cast to long here, but it would waste time
   ;; unnecessarily.
-  (.put ^Map *clj-record-holder* fact (.size ^Map *clj-record-holder*)))
+  (.put ^Map (.get clj-record-holder) fact (.size ^Map (.get clj-record-holder))))
 
 (defn clj-record-idx->fact
   "The reverse of clj-record-fact->idx.  Returns a fact for the given index found
-   in *clj-record-holder*."
+   in clj-record-holder."
   [id]
-  (.get ^List *clj-record-holder* id))
+  (.get ^List (.get clj-record-holder) id))
 
 (defn clj-record-holder-add-fact!
-  "The reverse of clj-record-holder-add-fact-idx!.  Adds the fact to the *clj-record-holder*
+  "The reverse of clj-record-holder-add-fact-idx!.  Adds the fact to the clj-record-holder
    at the next available index."
   [fact]
-  (.add ^List *clj-record-holder* fact)
+  (.add ^List (.get clj-record-holder) fact)
   fact)
 
 (defn create-map-entry
@@ -316,16 +335,16 @@
 ;;;; Commonly useful session serialization helpers.
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(def ^:dynamic *mem-facts*
+(def ^:internal ^ThreadLocal mem-facts
   "Useful for ISessionSerializer implementors to have a reference to the facts deserialized via 
    IWorkingMemorySerializer that are needed to restore working memory whose locations were stubbed
    with a MemIdx during serialization."
-  nil)
+  (ThreadLocal.))
 
 (defn find-mem-idx
   "Finds the fact from *mem-facts* at the given index.  See docs on *mem-facts* for more."
   [idx]
-  (get *mem-facts* idx))
+  (get (.get mem-facts) idx))
 
 (defn indexed-session-memory-state
   "Takes the working memory from a session and strips it down to only the memory needed for
