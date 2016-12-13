@@ -32,19 +32,19 @@
    and removes it in finally block."
   [bindings & body]
   (when-not (vector? bindings)
-    (throw (ex-info (str "Binding needs to be a vector.")
+    (throw (ex-info "Binding needs to be a vector."
                     {:bindings bindings})))
   (when-not (even? (count bindings))
-    (throw (ex-info (str "Needs an even number of forms in binding vector")
+    (throw (ex-info "Needs an even number of forms in binding vector"
                     {:bindings bindings})))
-  (let [bindings-map (apply assoc {} bindings)]
+  (let [binding-pairs (partition 2 bindings)]
     `(try
-       (doseq [~'[k v] ~bindings-map]
-         (.set ~'k ~'v))  
+       ~@(for [[tl v] binding-pairs]
+           `(.set ~tl ~v))
        ~@body
        (finally
-         (doseq [~'[k v] ~bindings-map]
-           (.remove ~'k))))))
+         ~@(for [[tl] binding-pairs]
+             `(.remove ~tl))))))
 
 (def ^:internal ^ThreadLocal node-id->node-cache
   "Useful for caching rulebase network nodes by id during serialization and deserialization to
