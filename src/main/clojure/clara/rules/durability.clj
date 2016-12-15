@@ -96,7 +96,9 @@
 (defn clj-record-fact->idx
   "Gets the numeric index for the given fact from the clj-record-holder."
   [fact]
-  (.get ^Map (.get clj-record-holder) fact))
+  (-> clj-record-holder
+    ^Map .get
+    (.get fact)))
 
 (defn clj-record-holder-add-fact-idx!
   "Adds the fact to the clj-record-holder with a new index.  This can later be retrieved
@@ -106,19 +108,27 @@
   ;; will be read later as longs and both will be compatible with the index lookup
   ;; at read-time.  This could have a cast to long here, but it would waste time
   ;; unnecessarily.
-  (.put ^Map (.get clj-record-holder) fact (.size ^Map (.get clj-record-holder))))
+  (-> clj-record-holder
+    ^Map .get
+    (.put fact (-> clj-record-holder
+                 ^Map .get
+                 (.size)))))
 
 (defn clj-record-idx->fact
   "The reverse of clj-record-fact->idx.  Returns a fact for the given index found
    in clj-record-holder."
   [id]
-  (.get ^List (.get clj-record-holder) id))
+  (-> clj-record-holder
+    ^List .get
+    (.get id)))
 
 (defn clj-record-holder-add-fact!
   "The reverse of clj-record-holder-add-fact-idx!.  Adds the fact to the clj-record-holder
    at the next available index."
   [fact]
-  (.add ^List (.get clj-record-holder) fact)
+  (-> clj-record-holder
+    ^List .get
+    (.add fact))
   fact)
 
 (defn create-map-entry
@@ -325,7 +335,9 @@
 (defn find-mem-idx
   "Finds the fact from *mem-facts* at the given index.  See docs on *mem-facts* for more."
   [idx]
-  (get (.get mem-facts) idx))
+  (-> mem-facts 
+    .get
+    (.get idx)))
 
 (defn indexed-session-memory-state
   "Takes the working memory from a session and strips it down to only the memory needed for
