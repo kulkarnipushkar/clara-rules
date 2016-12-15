@@ -58,7 +58,7 @@
     (def tuned-group-by clojure.core/group-by))
 
 (defmacro thread-local-binding
-  "Wraps given body in a try block, where it sets a provided ThreadLocal 
+  "Wraps given body in a try block, where it sets each given ThreadLocal binding 
    and removes it in finally block."
   [bindings & body]
   (when-not (vector? bindings)
