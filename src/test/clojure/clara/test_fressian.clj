@@ -2,6 +2,7 @@
   (:require [clara.rules.durability :as d]
             [clara.rules.durability.fressian :as df]
             [clojure.data.fressian :as fres]
+            [clara.rules.platform :as pform]
             [clojure.test :refer :all])
   (:import [org.fressian
             FressianWriter
@@ -16,12 +17,12 @@
   (with-open [os (java.io.ByteArrayOutputStream.)
               ^FressianWriter wtr (fres/create-writer os :handlers df/write-handler-lookup)]
     ;; Write
-    (d/thread-local-binding [d/node-id->node-cache (volatile! {})
+    (pform/thread-local-binding [d/node-id->node-cache (volatile! {})
                              d/clj-record-holder (java.util.IdentityHashMap.)]
                             (fres/write-object wtr x))
     ;; Read
     (let [data (.toByteArray os)]
-      (d/thread-local-binding [d/clj-record-holder (java.util.ArrayList.)]
+      (pform/thread-local-binding [d/clj-record-holder (java.util.ArrayList.)]
                               (with-open [is (java.io.ByteArrayInputStream. data)
                                           ^FressianReader rdr (fres/create-reader is :handlers df/read-handler-lookup)]
                                 (fres/read-object rdr))))))

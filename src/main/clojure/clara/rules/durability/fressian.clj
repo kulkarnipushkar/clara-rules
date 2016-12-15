@@ -7,6 +7,7 @@
             [clara.rules.memory :as mem]
             [clara.rules.engine :as eng]
             [clara.rules.compiler :as com]
+            [clara.rules.platform :as pform]
             [schema.core :as s]
             [clojure.data.fressian :as fres]
             [clojure.java.io :as jio]
@@ -530,7 +531,7 @@
           (fn [sources]
             (with-open [^FressianWriter wtr
                         (fres/create-writer out-stream :handlers write-handler-lookup)]
-              (d/thread-local-binding [d/node-id->node-cache (volatile! {})
+              (pform/thread-local-binding [d/node-id->node-cache (volatile! {})
                                        d/clj-record-holder record-holder]
                                       (doseq [s sources] (fres/write-object wtr s)))))]
       
@@ -561,7 +562,7 @@
                                   base-rulebase)
             rulebase (if maybe-base-rulebase
                        maybe-base-rulebase
-                       (let [without-opts-rulebase (d/thread-local-binding [d/node-id->node-cache (volatile! {})
+                       (let [without-opts-rulebase (pform/thread-local-binding [d/node-id->node-cache (volatile! {})
                                                                             d/compile-expr-fn (memoize (fn [id expr] (com/try-eval expr)))
                                                                             d/clj-record-holder record-holder]
                                                                            (fres/read-object rdr))]
@@ -570,7 +571,7 @@
         (if rulebase-only?
           rulebase
           (d/assemble-restored-session rulebase
-                                       (d/thread-local-binding [d/clj-record-holder record-holder
+                                       (pform/thread-local-binding [d/clj-record-holder record-holder
                                                                 d/mem-facts mem-facts]
                                                                (fres/read-object rdr))
                                        opts))))))

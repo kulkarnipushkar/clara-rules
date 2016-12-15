@@ -27,25 +27,6 @@
 ;;;; Rulebase serialization helpers.
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(defmacro thread-local-binding
-  "Wraps given body in a try block, where it sets a provided thread locals 
-   and removes it in finally block."
-  [bindings & body]
-  (when-not (vector? bindings)
-    (throw (ex-info "Binding needs to be a vector."
-                    {:bindings bindings})))
-  (when-not (even? (count bindings))
-    (throw (ex-info "Needs an even number of forms in binding vector"
-                    {:bindings bindings})))
-  (let [binding-pairs (partition 2 bindings)]
-    `(try
-       ~@(for [[tl v] binding-pairs]
-           `(.set ~tl ~v))
-       ~@body
-       (finally
-         ~@(for [[tl] binding-pairs]
-             `(.remove ~tl))))))
-
 (def ^:internal ^ThreadLocal node-id->node-cache
   "Useful for caching rulebase network nodes by id during serialization and deserialization to
    avoid creating multiple object instances for the same node."
